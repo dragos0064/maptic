@@ -29,10 +29,6 @@ class MyToolWindowFactory : ToolWindowFactory {
         val myToolWindow = CodeMapToolWindow(project)
         val content = ContentFactory.getInstance().createContent(myToolWindow.getContent(), null, false)
         toolWindow.contentManager.addContent(content)
-        // Schedule the update so it happens after the tool window is fully initialized.
-        com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater {
-            myToolWindow.updateFavicon(toolWindow, "myIcon.png")
-        }
     }
 
     override fun shouldBeAvailable(project: Project) = true
@@ -52,20 +48,11 @@ class MyToolWindowFactory : ToolWindowFactory {
         )
 
         /**
-         * Updates the tool window's icon (favicon) using an icon from the resources.
-         * Ensure that the icon file (e.g., "myIcon.png") is in src/main/resources/icons/.
-         */
-        fun updateFavicon(toolWindow: ToolWindow, iconName: String) {
-            val icon = IconLoader.getIcon("/icons/$iconName", javaClass)
-            toolWindow.setIcon(icon)
-        }
-
-        /**
          * Loads the API key from the external file "api_key.env".
          * The file should contain a line like: OPENAI_API_KEY=your_actual_api_key_here
          */
         private fun loadApiKey(): String? {
-            val envFile = File("C:/Users/drago/codemapai/.env")
+            val envFile = File("C:\\Robi\\fac\\projects\\codemapai\\.env")
             if (!envFile.exists()) return null
             val properties = Properties()
             envFile.inputStream().use { properties.load(it) }
