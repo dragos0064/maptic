@@ -12,16 +12,16 @@ import javax.swing.*
 import javax.swing.tree.DefaultMutableTreeNode
 import javax.swing.tree.DefaultTreeModel
 import javax.swing.event.TreeSelectionListener
-import java.awt.Dimension
+import java.awt.*
 import java.net.HttpURLConnection
 import java.net.URL
 import com.intellij.openapi.fileEditor.FileEditorManager
 import java.util.concurrent.*
 import org.json.JSONObject
 import com.intellij.openapi.util.IconLoader
-import java.awt.FlowLayout
 import java.io.File
 import java.util.Properties
+import com.intellij.openapi.editor.ScrollType
 
 class MyToolWindowFactory : ToolWindowFactory {
 
@@ -73,41 +73,46 @@ class MyToolWindowFactory : ToolWindowFactory {
         }
 
         /**
-         * Creates the main panel. This panel has:
-         *  1) A top bar with a small refresh button.
-         *  2) The rest of the UI (trees) in a separate panel.
+         * Creates the main panel.
+         * The panel has:
+         *   1) The code trees at the top
+         *   2) A wide refresh button at the bottom (full width)
          */
         fun getContent(): JPanel {
             val mainPanel = JPanel().apply {
                 layout = BoxLayout(this, BoxLayout.Y_AXIS)
             }
 
-            // Create a top bar for the small refresh button.
-            val topBar = JPanel().apply {
-                layout = FlowLayout(FlowLayout.LEFT, 5, 5)
-                maximumSize = Dimension(Int.MAX_VALUE, 40) // keep it short in height
+            // 1) Add the trees panel at the top
+            mainPanel.add(buildTreesPanel())
+
+            // 2) Create a bottom panel with BorderLayout so the button can stretch horizontally
+            val bottomPanel = JPanel(BorderLayout()).apply {
+                // Keep a consistent height for the panel
+                maximumSize = Dimension(Int.MAX_VALUE, 50)
+                preferredSize = Dimension(0, 50)
             }
 
-            val refreshButton = JButton("🔄").apply {
-                preferredSize = Dimension(24, 24)
-                maximumSize = Dimension(24, 24)
+            // Create the refresh button that will fill the entire bottom panel
+            val refreshButton = JButton("Refresh").apply {
                 toolTipText = "Refresh"
+                // You can also set a larger minimum or preferred size if desired
             }
 
-            // When clicked, rebuild the trees panel.
+            // On click, rebuild the trees panel and re-add this bottom panel
             refreshButton.addActionListener {
                 mainPanel.removeAll()
-                mainPanel.add(topBar)              // re-add the top bar
-                mainPanel.add(buildTreesPanel())    // re-add a fresh trees panel
+                mainPanel.add(buildTreesPanel())
+                mainPanel.add(bottomPanel)  // Re-add the bottom panel with the refresh button
                 mainPanel.revalidate()
                 mainPanel.repaint()
             }
 
-            topBar.add(refreshButton)
-            mainPanel.add(topBar)
+            // Put the button in the center region of the bottom panel so it expands fully
+            bottomPanel.add(refreshButton, BorderLayout.CENTER)
 
-            // Now add the actual trees panel below the top bar.
-            mainPanel.add(buildTreesPanel())
+            // Finally, add the bottom panel
+            mainPanel.add(bottomPanel)
 
             return mainPanel
         }
@@ -270,7 +275,7 @@ class MyToolWindowFactory : ToolWindowFactory {
             val offset = element.textOffset
             val pos = editor.offsetToLogicalPosition(offset)
             editor.caretModel.moveToLogicalPosition(pos)
-            editor.scrollingModel.scrollToCaret(com.intellij.openapi.editor.ScrollType.CENTER)
+            editor.scrollingModel.scrollToCaret(ScrollType.CENTER)
         }
 
         private fun getOpenAISummary(code: String): String {
