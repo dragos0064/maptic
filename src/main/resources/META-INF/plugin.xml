@@ -5,6 +5,8 @@
     <vendor>dragos0064</vendor>
 
     <depends>com.intellij.modules.platform</depends>
+    <depends>com.intellij.modules.java</depends>
+
 
     <resource-bundle>messages.MyBundle</resource-bundle>
 
