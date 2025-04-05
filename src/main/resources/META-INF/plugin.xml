@@ -7,11 +7,16 @@
     <depends>com.intellij.modules.platform</depends>
     <depends>com.intellij.modules.java</depends>
 
+    <version>1.0.2</version>
+
 
     <resource-bundle>messages.MyBundle</resource-bundle>
 
     <extensions defaultExtensionNs="com.intellij">
-        <toolWindow factoryClass="com.github.dragos0064.codemapai.toolWindow.MyToolWindowFactory" id="MyToolWindow"/>
+        <toolWindow factoryClass="com.github.dragos0064.codemapai.toolWindow.MyToolWindowFactory"
+                    id="CodeMapAI"
+                    anchor="right"
+                    icon="/icons/myIcon.png"/>
         <postStartupActivity implementation="com.github.dragos0064.codemapai.startup.MyProjectActivity" />
     </extensions>
 </idea-plugin>
