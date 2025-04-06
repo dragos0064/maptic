@@ -39,7 +39,7 @@ class MyToolWindowFactory : ToolWindowFactory {
     class CodeMapToolWindow(private val project: Project) {
 
         private fun loadApiKey(): String? {
-            val envFile = File("C:\\Users\\drago\\codemapai\\.env")
+            val envFile = File("C:\\Robi\\fac\\projects\\codemapai\\.env")
             if (!envFile.exists()) return null
             val properties = Properties()
             envFile.inputStream().use { properties.load(it) }
@@ -404,7 +404,7 @@ class MyToolWindowFactory : ToolWindowFactory {
 
         private fun buildTreesPanel(codeStructure: CodeStructure): JPanel {
             val panel = JPanel().apply { layout = BoxLayout(this, BoxLayout.Y_AXIS) }
-            val structureRoot = DefaultMutableTreeNode("📦 Code Structure")
+            val structureRoot = DefaultMutableTreeNode("Code Structure")
             val executor = Executors.newFixedThreadPool(4)
             val futures = mutableMapOf<String, Future<String>>()
 
@@ -431,10 +431,10 @@ class MyToolWindowFactory : ToolWindowFactory {
 
             fun buildClassNode(cls: PsiClass): DefaultMutableTreeNode {
                 val className = ReadAction.compute<String, Throwable> { cls.name ?: "UnnamedClass" }
-                val structureNode = DefaultMutableTreeNode(NodeData("📦 $className", cls))
+                val structureNode = DefaultMutableTreeNode(NodeData("\uD83C\uDDE8 $className", cls))
                 codeStructure.classMethods[cls]?.forEach { method ->
                     val methodName = ReadAction.compute<String, Throwable> { method.name ?: "Unnamed" }
-                    structureNode.add(DefaultMutableTreeNode(NodeData("🔹 $methodName()", method)))
+                    structureNode.add(DefaultMutableTreeNode(NodeData("\uD83C\uDDF2 $methodName()", method)))
                 }
                 codeStructure.classChildren[cls]?.forEach { childCls ->
                     val childNode = buildClassNode(childCls)
