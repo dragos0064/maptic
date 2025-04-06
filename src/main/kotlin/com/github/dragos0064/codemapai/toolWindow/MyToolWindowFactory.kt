@@ -12,19 +12,17 @@ import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.content.ContentFactory
 import org.json.JSONObject
 import java.awt.*
-import java.awt.event.MouseAdapter
-import java.awt.event.MouseEvent
+import java.awt.event.*
+import java.awt.geom.*
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
 import java.util.Properties
 import java.util.concurrent.*
 import javax.swing.*
-import javax.swing.border.EmptyBorder
 import javax.swing.tree.DefaultMutableTreeNode
 import javax.swing.tree.DefaultTreeModel
-import java.awt.geom.Arc2D
-import java.awt.geom.Path2D
+import kotlin.math.max
 
 class MyToolWindowFactory : ToolWindowFactory {
     override fun createToolWindowContent(project: Project, toolWindow: ToolWindow) {
@@ -39,7 +37,7 @@ class MyToolWindowFactory : ToolWindowFactory {
     class CodeMapToolWindow(private val project: Project) {
 
         private fun loadApiKey(): String? {
-            val envFile = File("C:\\Robi\\fac\\projects\\codemapai\\.env")
+            val envFile = File("C:\\Users\\drago\\codemapai\\.env")
             if (!envFile.exists()) return null
             val properties = Properties()
             envFile.inputStream().use { properties.load(it) }
@@ -63,53 +61,216 @@ class MyToolWindowFactory : ToolWindowFactory {
             val children: List<BubbleData> = emptyList()
         )
 
+        // ---------------------------------------------------
+        // New Diagram Types & BFS-based Class Diagram Panel
+        // ---------------------------------------------------
+
+        /**
+         * Represents a node in the class diagram.
+         */
+        data class DiagramNode(
+            val name: String,
+            val children: MutableList<DiagramNode> = mutableListOf()
+        ) {
+            var x: Int = 0
+            var y: Int = 0
+        }
+
+        /**
+         * Converts your CodeStructure into DiagramNodes.
+         * For each class, creates a node with its name and adds its methods (prefixed with 🔹) as children.
+         * Also adds top-level methods as separate nodes.
+         */
+        private fun buildDiagramNodes(structure: CodeStructure): MutableList<DiagramNode> {
+            val nodeMap = mutableMapOf<PsiClass, DiagramNode>()
+            // Include all classes from top-level and nested ones.
+            val allClasses = structure.topLevelClasses + structure.classChildren.values.flatten()
+            for (cls in allClasses) {
+                val className = ReadAction.compute<String, Throwable> { cls.name ?: "UnnamedClass" }
+                val classNode = DiagramNode(className)
+                // Add methods as children.
+                val methods = structure.classMethods[cls] ?: emptyList()
+                for (method in methods) {
+                    val methodName = ReadAction.compute<String, Throwable> { method.name ?: "Unnamed" }
+                    classNode.children.add(DiagramNode("🔹 $methodName()"))
+                }
+                nodeMap[cls] = classNode
+            }
+            // Build parent-child relationships between classes.
+            for ((parent, children) in structure.classChildren) {
+                val parentNode = nodeMap[parent]
+                if (parentNode != null) {
+                    for (child in children) {
+                        val childNode = nodeMap[child]
+                        if (childNode != null) {
+                            parentNode.children.add(childNode)
+                        }
+                    }
+                }
+            }
+            // Create nodes for top-level methods.
+            val topLevelMethodNodes = structure.topLevelMethods.map { method ->
+                val methodName = ReadAction.compute<String, Throwable> { method.name ?: "Unnamed" }
+                DiagramNode("🔹 $methodName()")
+            }
+            // Return roots: nodes that are top-level classes plus top-level methods.
+            return (structure.topLevelClasses.mapNotNull { nodeMap[it] } + topLevelMethodNodes).toMutableList()
+        }
+
+        /**
+         * A BFS-based diagram panel that lays out nodes level-by-level.
+         * This version uses very small nodes so that the entire diagram fits.
+         */
+        class BFSClassDiagramPanel(val topLevelNodes: MutableList<DiagramNode>) : JPanel() {
+
+            // Very small node dimensions for compactness.
+            private val nodeWidth = 80
+            private val nodeHeight = 40
+
+            // Smaller gaps.
+            private val levelGap = 30     // Vertical gap between rows
+            private val nodeGap = 10       // Horizontal gap between nodes
+            private val topMargin = 20     // Top margin
+            private val leftMargin = 20    // Left margin
+
+            // Edge styling
+            private val edgeColor = Color.GRAY
+            private val edgeStroke = BasicStroke(1f)
+
+            init {
+                layout = null
+                addComponentListener(object : ComponentAdapter() {
+                    override fun componentResized(e: ComponentEvent) {
+                        doLayoutWithBFS()
+                        repaint()
+                    }
+                })
+                doLayoutWithBFS()
+            }
+
+            /**
+             * Performs a BFS to assign each node a level and then groups nodes by level
+             * to position them in horizontal rows.
+             */
+            fun doLayoutWithBFS() {
+                val nodeLevel = mutableMapOf<DiagramNode, Int>()
+                val queue = ArrayDeque<DiagramNode>()
+                for (root in topLevelNodes) {
+                    nodeLevel[root] = 0
+                    queue.add(root)
+                }
+                while (queue.isNotEmpty()) {
+                    val current = queue.removeFirst()
+                    val level = nodeLevel[current] ?: 0
+                    for (child in current.children) {
+                        if (child !in nodeLevel) {
+                            nodeLevel[child] = level + 1
+                            queue.add(child)
+                        }
+                    }
+                }
+                val levelToNodes = nodeLevel.entries.groupBy({ it.value }, { it.key })
+                val panelWidth = width.coerceAtLeast(400)
+                for ((level, nodes) in levelToNodes) {
+                    val sortedNodes = nodes.sortedBy { it.name }
+                    val rowWidth = sortedNodes.size * nodeWidth + (sortedNodes.size - 1) * nodeGap
+                    var startX = (panelWidth - rowWidth) / 2 + leftMargin
+                    val y = topMargin + level * (nodeHeight + levelGap)
+                    for (node in sortedNodes) {
+                        node.x = startX
+                        node.y = y
+                        startX += nodeWidth + nodeGap
+                    }
+                }
+                val totalLevels = (levelToNodes.keys.maxOrNull() ?: 0) + 1
+                val neededHeight = topMargin + totalLevels * (nodeHeight + levelGap)
+                preferredSize = Dimension(panelWidth, neededHeight)
+                revalidate()
+            }
+
+            override fun paintComponent(g: Graphics) {
+                super.paintComponent(g)
+                val g2 = g as Graphics2D
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
+                for (root in topLevelNodes) {
+                    drawEdgesRecursively(g2, root)
+                }
+                for (root in topLevelNodes) {
+                    drawNodesRecursively(g2, root)
+                }
+            }
+
+            private fun drawEdgesRecursively(g2: Graphics2D, parent: DiagramNode) {
+                for (child in parent.children) {
+                    val parentCenterX = parent.x + nodeWidth / 2
+                    val parentCenterY = parent.y + nodeHeight
+                    val childCenterX = child.x + nodeWidth / 2
+                    val childCenterY = child.y
+                    g2.color = edgeColor
+                    g2.stroke = edgeStroke
+                    g2.drawLine(parentCenterX, parentCenterY, childCenterX, childCenterY)
+                    drawEdgesRecursively(g2, child)
+                }
+            }
+
+            private fun drawNodesRecursively(g2: Graphics2D, node: DiagramNode) {
+                val bubble = Ellipse2D.Float(
+                    node.x.toFloat(),
+                    node.y.toFloat(),
+                    nodeWidth.toFloat(),
+                    nodeHeight.toFloat()
+                )
+                g2.color = Color(240, 240, 240)
+                g2.fill(bubble)
+                g2.color = Color.DARK_GRAY
+                g2.stroke = BasicStroke(1f)
+                g2.draw(bubble)
+                g2.font = g2.font.deriveFont(Font.BOLD, 10f)
+                g2.color = Color.BLACK
+                val fm = g2.fontMetrics
+                val textWidth = fm.stringWidth(node.name)
+                val textX = node.x + (nodeWidth - textWidth) / 2
+                val textY = node.y + (nodeHeight + fm.ascent) / 2 - 2
+                g2.drawString(node.name, textX, textY)
+                for (child in node.children) {
+                    drawNodesRecursively(g2, child)
+                }
+            }
+        }
+
+        // ---------------------------------------------------
+        // Existing Components (BubbleComponent, CodeTreePanel, BubbleRoadmapPanel)
+        // ---------------------------------------------------
+
         class BubbleComponent(val data: BubbleData) : JPanel() {
-            // Fixed component size so that other bubbles don’t move.
             private val componentWidth = 250
             private val componentHeight = 300
-
-            // Bubble dimensions.
             private val bubbleWidth = 200
             private val bubbleHeight = 80
-
-            // We want the bubble to start at the top.
-            // Use a small top margin, which also defines the bubble’s starting Y.
             private val topMargin = 10
             private val bubbleBaseY = topMargin
-
-            // Animation state: the bubble’s vertical offset from bubbleBaseY.
             private var animationOffset = 0
-            // Target offset: how far down the bubble should move when fully hovered,
-            // which is determined by the height of the explanation text plus a small gap.
             private var targetOffset = 0
             private var timer: Timer? = null
             private var isHovered = false
             private val animationStep = 6
             private val animationDelay = 10
-            // Gap between the bottom of the text and the bubble’s top.
             private val textMargin = 5
-
-            // Fixed horizontal padding for drawing.
             private val horizontalPadding = 10
 
             init {
                 preferredSize = Dimension(componentWidth, componentHeight)
                 isOpaque = false
-                // Fixed size so that layout never changes.
                 border = BorderFactory.createEmptyBorder(0, 0, 0, 0)
-
                 addMouseListener(object : MouseAdapter() {
                     override fun mouseEntered(e: MouseEvent?) {
                         if (!isHovered) {
                             isHovered = true
-                            // Compute the full height needed to display the explanation text.
                             val explanationHeight = calculateExplanationHeight()
-                            // The bubble should move down so that its top ends just below the text.
                             targetOffset = explanationHeight + textMargin
                             startAnimation(expanding = true)
                         }
                     }
-
                     override fun mouseExited(e: MouseEvent?) {
                         if (isHovered) {
                             targetOffset = 0
@@ -119,16 +280,10 @@ class MyToolWindowFactory : ToolWindowFactory {
                 })
             }
 
-            /**
-             * Animates the bubble’s internal offset.
-             * When expanding, the bubble moves downward (revealing more text).
-             * When collapsing, it moves back upward.
-             */
             private fun startAnimation(expanding: Boolean) {
                 timer?.stop()
                 timer = Timer(animationDelay) {
                     if (expanding) {
-                        // Move the bubble downward until it reaches targetOffset
                         if (animationOffset < targetOffset) {
                             animationOffset += animationStep
                             if (animationOffset > targetOffset) animationOffset = targetOffset
@@ -137,13 +292,11 @@ class MyToolWindowFactory : ToolWindowFactory {
                             timer?.stop()
                         }
                     } else {
-                        // Move the bubble upward until animationOffset == 0
                         if (animationOffset > 0) {
                             animationOffset -= animationStep
                             if (animationOffset < 0) animationOffset = 0
                             repaint()
                         } else {
-                            // Bubble is fully collapsed; hide text
                             isHovered = false
                             repaint()
                             timer?.stop()
@@ -153,10 +306,6 @@ class MyToolWindowFactory : ToolWindowFactory {
                 timer?.start()
             }
 
-            /**
-             * Computes the height required for the explanation text.
-             * Uses word-wrapping based on the bubble width.
-             */
             private fun calculateExplanationHeight(): Int {
                 val g2 = getGraphics() as? Graphics2D ?: return 40
                 g2.font = font.deriveFont(Font.PLAIN, 12f)
@@ -178,63 +327,39 @@ class MyToolWindowFactory : ToolWindowFactory {
                 return lines * fm.height + 5
             }
 
-            /**
-             * Draws the explanation text using a custom clipping shape.
-             * The clipping shape is defined so that its bottom boundary is an arc that spans
-             * from one end of the bubble to the other, "molding" the text to the bubble’s top curve.
-             */
             private fun drawMoldedText(g2: Graphics2D) {
-                // The current bubble position.
                 val bubbleX = horizontalPadding
                 val bubbleY = bubbleBaseY + animationOffset
-
-                // Create a Path2D that covers from topMargin down to the bubble’s top,
-                // then uses the top half of the bubble as the bottom boundary.
                 val clipPath = Path2D.Float().apply {
-                    // Move to top-left
                     moveTo(bubbleX.toFloat(), topMargin.toFloat())
-                    // Go across to top-right
                     lineTo((bubbleX + bubbleWidth).toFloat(), topMargin.toFloat())
-                    // Straight down to the bubble's top-right
                     lineTo((bubbleX + bubbleWidth).toFloat(), bubbleY.toFloat())
-                    // Append the top half of the bubble (arc) as the bottom boundary
-                    // Here, we start at angle=0 (rightmost point) and sweep 180 degrees to the leftmost point
                     val arc = Arc2D.Float(
                         bubbleX.toFloat(),
                         bubbleY.toFloat(),
                         bubbleWidth.toFloat(),
                         bubbleHeight.toFloat(),
-                        0f, // start angle
-                        180f, // extent
+                        0f,
+                        180f,
                         Arc2D.OPEN
                     )
                     append(arc, true)
                     closePath()
                 }
-
-                // Save the original clipping and set our custom clip.
                 val originalClip = g2.clip
                 g2.clip = clipPath
-
-                // Draw the explanation text in white.
                 g2.font = font.deriveFont(Font.PLAIN, 12f)
                 g2.color = Color.WHITE
                 val fm = g2.fontMetrics
                 val lines = wrapText(g2, data.explanation, bubbleWidth)
                 var y = topMargin + fm.ascent
                 for (line in lines) {
-                    // Explicit cast to String to avoid overload ambiguity.
                     g2.drawString(line as String, bubbleX, y)
                     y += fm.height
                 }
-
-                // Restore the original clip.
                 g2.clip = originalClip
             }
 
-            /**
-             * A simple helper to wrap text to fit within a maximum line width.
-             */
             private fun wrapText(g2: Graphics2D, text: String, maxWidth: Int): List<String> {
                 val fm = g2.fontMetrics
                 val words = text.split(" ")
@@ -257,13 +382,9 @@ class MyToolWindowFactory : ToolWindowFactory {
                 super.paintComponent(g)
                 val g2 = g as Graphics2D
                 g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
-
-                // Draw molded text (if hovered or while animating).
                 if (isHovered || animationOffset > 0) {
                     drawMoldedText(g2)
                 }
-
-                // Draw the bubble.
                 val bubbleX = horizontalPadding
                 val bubbleY = bubbleBaseY + animationOffset
                 g2.color = Color.LIGHT_GRAY
@@ -271,8 +392,6 @@ class MyToolWindowFactory : ToolWindowFactory {
                 g2.color = Color.DARK_GRAY
                 g2.stroke = BasicStroke(2f)
                 g2.drawOval(bubbleX, bubbleY, bubbleWidth, bubbleHeight)
-
-                // Draw the bubble’s name centered within the bubble.
                 g2.font = font.deriveFont(Font.BOLD, 14f)
                 g2.color = Color.BLACK
                 val fm = g2.fontMetrics
@@ -283,13 +402,11 @@ class MyToolWindowFactory : ToolWindowFactory {
             }
         }
 
-
         inner class CodeTreePanel(private var structure: CodeStructure) : JPanel() {
             init {
                 layout = BoxLayout(this, BoxLayout.Y_AXIS)
                 refresh(structure)
             }
-
             fun refresh(newStructure: CodeStructure) {
                 this.structure = newStructure
                 removeAll()
@@ -377,18 +494,29 @@ class MyToolWindowFactory : ToolWindowFactory {
             val codeTreePanel = CodeTreePanel(codeStructure)
             var bubbleDataList = buildBubbleData(codeStructure)
             val bubbleRoadmapPanel = BubbleRoadmapPanel(bubbleDataList)
+            // Build diagram nodes (including methods) and create the BFS diagram panel.
+            val diagramNodes = buildDiagramNodes(codeStructure)
+            // Use all top-level classes as roots so that every parent class appears.
+            val classDiagramPanel = BFSClassDiagramPanel(diagramNodes)
 
             val tabbedPane = JTabbedPane()
             tabbedPane.addTab("Code Tree", codeTreePanel)
             tabbedPane.addTab("Bubble Roadmap", bubbleRoadmapPanel)
+            tabbedPane.addTab("Class Diagram", JBScrollPane(classDiagramPanel))
 
             val refreshButton = JButton("Refresh").apply {
-                toolTipText = "Refresh both views"
+                toolTipText = "Refresh all views"
                 addActionListener {
                     codeStructure = getElementsTree()
                     codeTreePanel.refresh(codeStructure)
                     bubbleDataList = buildBubbleData(codeStructure)
                     bubbleRoadmapPanel.updateBubbleData(bubbleDataList)
+                    val newDiagramNodes = buildDiagramNodes(codeStructure)
+                    diagramNodes.clear()
+                    diagramNodes.addAll(newDiagramNodes)
+                    classDiagramPanel.doLayoutWithBFS()
+                    classDiagramPanel.revalidate()
+                    classDiagramPanel.repaint()
                 }
             }
 
