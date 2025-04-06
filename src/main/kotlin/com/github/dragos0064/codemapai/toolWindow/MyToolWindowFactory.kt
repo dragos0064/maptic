@@ -119,16 +119,16 @@ class MyToolWindowFactory : ToolWindowFactory {
 
         /**
          * A BFS-based diagram panel that lays out nodes level-by-level.
-         * This version uses very small nodes so that the entire diagram fits.
+         * This version now uses the same colors as the BubbleComponent.
          */
         class BFSClassDiagramPanel(val topLevelNodes: MutableList<DiagramNode>) : JPanel() {
 
-            // Very small node dimensions for compactness.
-            private val nodeWidth = 80
-            private val nodeHeight = 40
+            // Node dimensions
+            private val nodeWidth = 90
+            private val nodeHeight = 60
 
-            // Smaller gaps.
-            private val levelGap = 30     // Vertical gap between rows
+            // Gaps
+            private val levelGap = 100     // Vertical gap between rows
             private val nodeGap = 10       // Horizontal gap between nodes
             private val topMargin = 20     // Top margin
             private val leftMargin = 20    // Left margin
@@ -213,6 +213,12 @@ class MyToolWindowFactory : ToolWindowFactory {
                 }
             }
 
+            /**
+             * Draws each node as a bubble matching the BubbleComponent’s style:
+             * - Fill color: Gray
+             * - Border color: Dark Gray with a 2px stroke
+             * - Centered white text.
+             */
             private fun drawNodesRecursively(g2: Graphics2D, node: DiagramNode) {
                 val bubble = Ellipse2D.Float(
                     node.x.toFloat(),
@@ -220,13 +226,16 @@ class MyToolWindowFactory : ToolWindowFactory {
                     nodeWidth.toFloat(),
                     nodeHeight.toFloat()
                 )
-                g2.color = Color(240, 240, 240)
+                // Set fill to match BubbleComponent
+                g2.color = Color.GRAY
                 g2.fill(bubble)
+                // Set border color and thicker stroke
                 g2.color = Color.DARK_GRAY
-                g2.stroke = BasicStroke(1f)
+                g2.stroke = BasicStroke(2f)
                 g2.draw(bubble)
+                // Draw centered white text
                 g2.font = g2.font.deriveFont(Font.BOLD, 10f)
-                g2.color = Color.BLACK
+                g2.color = Color.WHITE
                 val fm = g2.fontMetrics
                 val textWidth = fm.stringWidth(node.name)
                 val textX = node.x + (nodeWidth - textWidth) / 2
@@ -263,7 +272,7 @@ class MyToolWindowFactory : ToolWindowFactory {
             private var targetOffset = 0
             private var timer: Timer? = null
             private var isHovered = false
-            private val animationStep = 6
+            private val animationStep = 20
             private val animationDelay = 10
             // Gap between the bottom of the text and the bubble’s top.
             private val textMargin = 5
@@ -445,7 +454,7 @@ class MyToolWindowFactory : ToolWindowFactory {
                 // Draw the bubble.
                 val bubbleX = horizontalPadding
                 val bubbleY = bubbleBaseY + animationOffset
-                g2.color = Color.LIGHT_GRAY
+                g2.color = Color.GRAY
                 g2.fillOval(bubbleX, bubbleY, bubbleWidth, bubbleHeight)
                 g2.color = Color.DARK_GRAY
                 g2.stroke = BasicStroke(2f)
@@ -453,7 +462,7 @@ class MyToolWindowFactory : ToolWindowFactory {
 
                 // Draw the bubble’s name centered within the bubble.
                 g2.font = font.deriveFont(Font.BOLD, 17f)
-                g2.color = Color.BLACK
+                g2.color = Color.WHITE
                 val fm = g2.fontMetrics
                 val nameWidth = fm.stringWidth(data.name)
                 val nameX = bubbleX + (bubbleWidth - nameWidth) / 2
