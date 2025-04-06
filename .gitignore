@@ -3,4 +3,4 @@
 .intellijPlatform
 .qodana
 build
-.env
+src/main/resources/.env
