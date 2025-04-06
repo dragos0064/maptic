@@ -243,34 +243,52 @@ class MyToolWindowFactory : ToolWindowFactory {
         // ---------------------------------------------------
 
         class BubbleComponent(val data: BubbleData) : JPanel() {
-            private val componentWidth = 250
-            private val componentHeight = 300
-            private val bubbleWidth = 200
-            private val bubbleHeight = 80
+            // Fixed component size so that other bubbles don’t move.
+            private val componentWidth = 300
+            private val componentHeight = 600
+
+            // Bubble dimensions.
+            private val bubbleWidth = 250
+            private val bubbleHeight = 120
+
+            // We want the bubble to start at the top.
+            // Use a small top margin, which also defines the bubble’s starting Y.
             private val topMargin = 10
             private val bubbleBaseY = topMargin
+
+            // Animation state: the bubble’s vertical offset from bubbleBaseY.
             private var animationOffset = 0
+            // Target offset: how far down the bubble should move when fully hovered,
+            // which is determined by the height of the explanation text plus a small gap.
             private var targetOffset = 0
             private var timer: Timer? = null
             private var isHovered = false
             private val animationStep = 6
             private val animationDelay = 10
+            // Gap between the bottom of the text and the bubble’s top.
             private val textMargin = 5
+
+            // Fixed horizontal padding for drawing.
             private val horizontalPadding = 10
 
             init {
                 preferredSize = Dimension(componentWidth, componentHeight)
                 isOpaque = false
+                // Fixed size so that layout never changes.
                 border = BorderFactory.createEmptyBorder(0, 0, 0, 0)
+
                 addMouseListener(object : MouseAdapter() {
                     override fun mouseEntered(e: MouseEvent?) {
                         if (!isHovered) {
                             isHovered = true
+                            // Compute the full height needed to display the explanation text.
                             val explanationHeight = calculateExplanationHeight()
+                            // The bubble should move down so that its top ends just below the text.
                             targetOffset = explanationHeight + textMargin
                             startAnimation(expanding = true)
                         }
                     }
+
                     override fun mouseExited(e: MouseEvent?) {
                         if (isHovered) {
                             targetOffset = 0
@@ -280,10 +298,16 @@ class MyToolWindowFactory : ToolWindowFactory {
                 })
             }
 
+            /**
+             * Animates the bubble’s internal offset.
+             * When expanding, the bubble moves downward (revealing more text).
+             * When collapsing, it moves back upward.
+             */
             private fun startAnimation(expanding: Boolean) {
                 timer?.stop()
                 timer = Timer(animationDelay) {
                     if (expanding) {
+                        // Move the bubble downward until it reaches targetOffset
                         if (animationOffset < targetOffset) {
                             animationOffset += animationStep
                             if (animationOffset > targetOffset) animationOffset = targetOffset
@@ -292,11 +316,13 @@ class MyToolWindowFactory : ToolWindowFactory {
                             timer?.stop()
                         }
                     } else {
+                        // Move the bubble upward until animationOffset == 0
                         if (animationOffset > 0) {
                             animationOffset -= animationStep
                             if (animationOffset < 0) animationOffset = 0
                             repaint()
                         } else {
+                            // Bubble is fully collapsed; hide text
                             isHovered = false
                             repaint()
                             timer?.stop()
@@ -306,9 +332,13 @@ class MyToolWindowFactory : ToolWindowFactory {
                 timer?.start()
             }
 
+            /**
+             * Computes the height required for the explanation text.
+             * Uses word-wrapping based on the bubble width.
+             */
             private fun calculateExplanationHeight(): Int {
                 val g2 = getGraphics() as? Graphics2D ?: return 40
-                g2.font = font.deriveFont(Font.PLAIN, 12f)
+                g2.font = font.deriveFont(Font.PLAIN, 16f)
                 val fm = g2.fontMetrics
                 val maxLineWidth = bubbleWidth
                 val words = data.explanation.split(" ")
@@ -327,39 +357,63 @@ class MyToolWindowFactory : ToolWindowFactory {
                 return lines * fm.height + 5
             }
 
+            /**
+             * Draws the explanation text using a custom clipping shape.
+             * The clipping shape is defined so that its bottom boundary is an arc that spans
+             * from one end of the bubble to the other, "molding" the text to the bubble’s top curve.
+             */
             private fun drawMoldedText(g2: Graphics2D) {
+                // The current bubble position.
                 val bubbleX = horizontalPadding
                 val bubbleY = bubbleBaseY + animationOffset
+
+                // Create a Path2D that covers from topMargin down to the bubble’s top,
+                // then uses the top half of the bubble as the bottom boundary.
                 val clipPath = Path2D.Float().apply {
+                    // Move to top-left
                     moveTo(bubbleX.toFloat(), topMargin.toFloat())
+                    // Go across to top-right
                     lineTo((bubbleX + bubbleWidth).toFloat(), topMargin.toFloat())
+                    // Straight down to the bubble's top-right
                     lineTo((bubbleX + bubbleWidth).toFloat(), bubbleY.toFloat())
+                    // Append the top half of the bubble (arc) as the bottom boundary
+                    // Here, we start at angle=0 (rightmost point) and sweep 180 degrees to the leftmost point
                     val arc = Arc2D.Float(
                         bubbleX.toFloat(),
                         bubbleY.toFloat(),
                         bubbleWidth.toFloat(),
                         bubbleHeight.toFloat(),
-                        0f,
-                        180f,
+                        0f, // start angle
+                        180f, // extent
                         Arc2D.OPEN
                     )
                     append(arc, true)
                     closePath()
                 }
+
+                // Save the original clipping and set our custom clip.
                 val originalClip = g2.clip
                 g2.clip = clipPath
-                g2.font = font.deriveFont(Font.PLAIN, 12f)
+
+                // Draw the explanation text in white.
+                g2.font = font.deriveFont(Font.PLAIN, 16f)
                 g2.color = Color.WHITE
                 val fm = g2.fontMetrics
                 val lines = wrapText(g2, data.explanation, bubbleWidth)
                 var y = topMargin + fm.ascent
                 for (line in lines) {
+                    // Explicit cast to String to avoid overload ambiguity.
                     g2.drawString(line as String, bubbleX, y)
                     y += fm.height
                 }
+
+                // Restore the original clip.
                 g2.clip = originalClip
             }
 
+            /**
+             * A simple helper to wrap text to fit within a maximum line width.
+             */
             private fun wrapText(g2: Graphics2D, text: String, maxWidth: Int): List<String> {
                 val fm = g2.fontMetrics
                 val words = text.split(" ")
@@ -382,9 +436,13 @@ class MyToolWindowFactory : ToolWindowFactory {
                 super.paintComponent(g)
                 val g2 = g as Graphics2D
                 g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
+
+                // Draw molded text (if hovered or while animating).
                 if (isHovered || animationOffset > 0) {
                     drawMoldedText(g2)
                 }
+
+                // Draw the bubble.
                 val bubbleX = horizontalPadding
                 val bubbleY = bubbleBaseY + animationOffset
                 g2.color = Color.LIGHT_GRAY
@@ -392,7 +450,9 @@ class MyToolWindowFactory : ToolWindowFactory {
                 g2.color = Color.DARK_GRAY
                 g2.stroke = BasicStroke(2f)
                 g2.drawOval(bubbleX, bubbleY, bubbleWidth, bubbleHeight)
-                g2.font = font.deriveFont(Font.BOLD, 14f)
+
+                // Draw the bubble’s name centered within the bubble.
+                g2.font = font.deriveFont(Font.BOLD, 17f)
                 g2.color = Color.BLACK
                 val fm = g2.fontMetrics
                 val nameWidth = fm.stringWidth(data.name)
